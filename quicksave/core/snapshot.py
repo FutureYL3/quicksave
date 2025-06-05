@@ -10,9 +10,7 @@ from quicksave.utils.logger import log
 from quicksave.utils.timer import timed
 from quicksave.utils.compress import compress_dir
 from ._criu import build as criu_cmd
-
-QS_DIR = pathlib.Path.home() / ".quicksave"
-QS_DIR.mkdir(exist_ok=True)
+from . import QS_DIR
 
 
 @timed
@@ -40,7 +38,7 @@ def dump(pids: List[int], label: str | None = None) -> pathlib.Path:
         log.info("final dump (root)…")
         subprocess.run(
             criu_cmd("dump", "-t", leader, "-D", tmp_dump,
-                     "--shell-job", "--tcp-established", "--ext-unix-sk", "--pty"),
+                     "--shell-job", "--tcp-established", "--ext-unix-sk"),
             check=True, stdin=subprocess.DEVNULL,
         )
 
@@ -49,7 +47,7 @@ def dump(pids: List[int], label: str | None = None) -> pathlib.Path:
         log.info("rootless dump pid=%s -> %s", leader, tmp_dump)
         subprocess.run(
             criu_cmd("dump", "-t", leader, "-D", tmp_dump,
-                     "--shell-job", "--ext-unix-sk", "--pty"),
+                     "--shell-job", "--ext-unix-sk"),
             check=True, stdin=subprocess.DEVNULL,
         )
 
