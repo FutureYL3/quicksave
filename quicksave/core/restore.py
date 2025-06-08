@@ -78,35 +78,22 @@ def _exec(cmd: List[str]) -> bool:
 def _do_restore(workdir: pathlib.Path) -> bool:
     """
     执行恢复操作。
-    在终端中执行恢复命令。
+    在终端中执行 CRIU 恢复命令。
     """
     try:
-        # 修复文件权限
         _fix_permissions(workdir)
-        
-        # 获取 Python 解释器路径
-        python_exe = sys.executable
-        
-        # 获取原始快照文件路径
-        original_snapshot = workdir.parent / f"{workdir.name}.qsnap"
-        if not original_snapshot.exists():
-            original_snapshot = workdir.parent / f"{workdir.name}.bak"
-        
-        # 构建恢复命令
-        restore_cmd = f'"{python_exe}" -m quicksave.core.cli restore "{original_snapshot}"'
+        criu_args = criu_cmd(
+            "restore", "-D", str(workdir),
+            "--shell-job", "--ext-unix-sk"
+        )
+        restore_cmd = " ".join(criu_args)
         log.info("构建恢复命令: %s", restore_cmd)
-        
-        # 根据操作系统选择终端命令
-        if os.name == 'nt':  # Windows
-            # 使用 PowerShell 创建新窗口并执行命令
-            cmd = [
-                "powershell", "-NoProfile", "-Command",
-                f'Start-Process powershell -ArgumentList "-NoProfile -Command \\"{restore_cmd}; Write-Host \\"按任意键关闭窗口...\\"; $null = $Host.UI.RawUI.ReadKey(\\"NoEcho,IncludeKeyDown\\")\\"" -Verb RunAs -Wait'
-            ]
-        else:  # Linux/Unix
-            # 使用 gnome-terminal 或其他终端模拟器
+
+        if os.name == 'nt':
+            # Windows 分支略
+            pass
+        else:
             terminal_cmd = 'gnome-terminal' if os.path.exists('/usr/bin/gnome-terminal') else 'x-terminal-emulator'
-            # 构建完整的命令，包括错误处理和用户提示
             full_cmd = f"""
 echo "开始恢复快照..."
 echo "执行命令: {restore_cmd}"
@@ -116,6 +103,7 @@ result=$?
 echo "----------------------------------------"
 if [ $result -eq 0 ]; then
     echo "恢复成功！"
+    rm -rf '{workdir}'
 else
     echo "恢复失败，错误代码: $result"
     echo "请检查以下可能的问题："
@@ -133,10 +121,9 @@ read
                 'bash', '-c',
                 full_cmd
             ]
-        
+
         log.info("执行终端命令: %s", " ".join(cmd))
         result = _exec(cmd)
-        
         return result
     except Exception as e:
         log.error("恢复操作失败: %s", str(e))
@@ -194,23 +181,27 @@ def restore(qsnap: pathlib.Path) -> bool:
         log.error("快照文件不存在: %s", qsnap)
         raise FileNotFoundError(qsnap)
 
-    tmp = pathlib.Path(tempfile.mkdtemp(prefix="qs_res_"))
     bak = qsnap.with_suffix(".bak")
-    ok = False
-    
-    try:
-        log.info("开始恢复快照: %s", qsnap)
-        decompress_file(qsnap, tmp)
+    # 先将 .qsnap 重命名为 .bak，避免后续找不到 .bak 文件
+    if not bak.exists():
         qsnap.rename(bak)
-        
+    else:
+        log.warning("备份文件已存在: %s，将覆盖原有备份。", bak)
+        bak.unlink()
+        qsnap.rename(bak)
+
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="qs_res_"))
+    ok = False
+    try:
+        log.info("开始恢复快照: %s", bak)
+        decompress_file(bak, tmp)
         # 检查解压后的文件
         log.info("检查解压后的文件...")
         for root, dirs, files in os.walk(tmp):
             for f in files:
                 path = pathlib.Path(root) / f
                 log.debug("文件: %s (大小: %d 字节)", path, path.stat().st_size)
-        
-        # 在终端中执行恢复命令
+        # 在终端中执行恢复命令，只传 workdir
         ok = _do_restore(tmp)
         if ok:
             log.info("恢复成功，删除备份文件")
@@ -218,7 +209,6 @@ def restore(qsnap: pathlib.Path) -> bool:
         else:
             log.warning("恢复失败，回滚到原始快照")
             bak.rename(qsnap)
-            
         return ok
     except Exception as e:
         log.error("恢复快照时发生错误: %s", str(e))
@@ -237,5 +227,4 @@ def restore(qsnap: pathlib.Path) -> bool:
                 shutil.copy2(tmp / "action.log", log_dir / f"action_{qsnap.stem}.log")
         except Exception as e:
             log.error("保存日志文件失败: %s", e)
-        
-        shutil.rmtree(tmp, ignore_errors=True)
+        # 不再在这里删除 tmp 目录，由新终端脚本负责

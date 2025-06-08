@@ -26,9 +26,11 @@ def _compress_cmd(out_path: pathlib.Path, level: int = 19) -> list[str]:
 
 
 def _decompress_cmd(qsnap: pathlib.Path, out_path: pathlib.Path) -> list[str]:
-    if qsnap.suffix == ".qsnap" and ALG_ZSTD:
+    # 支持 .qsnap、.bak、.qsnap.bak
+    fname = str(qsnap)
+    if (fname.endswith(".qsnap") or fname.endswith(".qsnap.bak") or fname.endswith(".bak")) and ALG_ZSTD:
         return ["zstd", "-d", "--quiet", "-o", str(out_path), str(qsnap)]
-    if qsnap.suffix == ".qsnap" and ALG_LZ4:
+    if (fname.endswith(".qsnap") or fname.endswith(".qsnap.bak") or fname.endswith(".bak")) and ALG_LZ4:
         return ["lz4", "-d", "-q", "-o", str(out_path), str(qsnap)]
     raise ValueError("Unsupported compression format")
 

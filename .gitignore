@@ -1,2 +1,10 @@
 criu
-criu/*
+criu/**
+quicksave/**/__pycache__
+quicksave/**/__pycache__/**
+logs
+logs/**
+quicksave.egg-info
+quicksave.egg-info/**
+venv
+venv/**
